@@ -581,5 +581,60 @@ namespace Autofac.Test.Core.Lifetime
 
             Assert.Equal(expectedMessage, exception.Message);
         }
+
+        //issue 690
+        [Fact]
+        public void ParentRegistrationDidntDisposeByChildScope()
+        {
+            var builder = new ContainerBuilder();
+            builder.RegisterType<ServiceCFactory>().As<IServiceCFactory>().SingleInstance();
+            builder.Register(x => x.Resolve<IServiceCFactory>().CreateCService());
+            builder.RegisterType<ServiceE>();
+
+            var container = builder.Build();
+
+            using (var moduleScope = container.BeginLifetimeScope(x =>
+            {
+                x.RegisterType<ServiceD>().AsSelf().InstancePerLifetimeScope();
+            }))
+            {
+                var stub = moduleScope.Resolve<ServiceE>();
+                using (var syncScope = moduleScope.BeginLifetimeScope(y => y.RegisterInstance(stub).AsSelf().ExternallyOwned()))
+                {
+                    syncScope.Resolve<ServiceD>();
+                }
+
+                stub = moduleScope.Resolve<ServiceE>();
+            }
+        }
+
+        interface IServiceCFactory
+        {
+            ServiceC CreateCService();
+        }
+
+        class ServiceC
+        {
+        }
+
+        class ServiceD
+        {
+            public ServiceD(ServiceC serviceC) { }
+        }
+
+        class ServiceE
+        {
+            public ServiceE(ServiceC serviceC) { }
+        }
+
+        class ServiceCFactory : IServiceCFactory
+        {
+            public ServiceC CreateCService()
+            {
+                return new ServiceC();
+            }
+        }
+
+
     }
 }
